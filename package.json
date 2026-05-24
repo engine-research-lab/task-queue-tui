@@ -1,0 +1,20 @@
+{
+  "name": "task-queue-tui",
+  "version": "1.0.0",
+  "private": true,
+  "bin": {
+    "tq": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "blessed": "^0.1.81",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "devDependencies": {
+    "@types/blessed": "^0.1.27"
+  }
+}
