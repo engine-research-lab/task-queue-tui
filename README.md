@@ -148,4 +148,4 @@ src/
 
 ## License
 
-MIT
+AGPL
