@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import type { Task, EnergyLevel, TaskType, TaskStats } from './types';
+import type { Task, EnergyLevel, TaskStats } from './types';
 
 const DB_DIR = path.join(os.homedir(), '.taskqueue');
 const DB_PATH = path.join(DB_DIR, 'tasks.json');
@@ -48,7 +48,7 @@ export function getCompleted(limit = 50): Task[] {
 }
 
 /** Add a new queued task */
-export function addTask(name: string, energy_level: EnergyLevel, task_type: TaskType): Task {
+export function addTask(name: string, energy_level: EnergyLevel, task_type: string): Task {
   const tasks = load();
   const maxPos = tasks.length > 0 ? Math.max(...tasks.filter(t => t.status === 'queued').map(t => t.position)) : -1;
   const task: Task = {
