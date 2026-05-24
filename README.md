@@ -6,7 +6,7 @@ Pull the top task → focus mode with timer → finish → next. No click, no cl
 
 ```
 ────────────────────────────────────────────────────────
-TASK QUEUE v2.0  ● ONLINE  4 TASKS    TODAY:0 WEEK:0 14:32
+TASK QUEUE v2.0  4 TASKS                 TODAY:0  WEEK:0  14:32
 ────────────────────────────────────────────────────────
 
 → PULL NEXT TASK                                  [SPACE]
@@ -23,31 +23,34 @@ Refactor auth middleware                          MEDIUM
 ## Install
 
 ```bash
-# Clone
-git clone https://github.com/manuel/tq.git
-cd tq
-
-# Install deps
-npm install
-
-# Install globally (so `tq` works from anywhere)
-npm link
-
-# Or run directly
-npx tsx src/index.ts
+npm install -g task-queue-tui
+tq
 ```
 
-Requires **Node 20+** and a terminal that supports 24-bit color (modern terminals: iTerm2, Kitty, Ghostty, WezTerm, Terminal.app, Windows Terminal).
+Or from source:
+
+```bash
+git clone https://github.com/engine-research-lab/task-queue-tui.git && cd task-queue-tui && npm i && npm link && tq
+```
+
+Or run without installing:
+
+```bash
+npx task-queue-tui
+```
+
+Requires **Node 20+** and a terminal that supports 24-bit color.
 
 ## Usage
 
 ```bash
-tq                       # start with amber theme
-tq --theme=grey          # start with mono grey
-tq --theme=slate         # start with slate
+tq                              # grey (default)
+tq --theme=amber                # warm retro
+tq --theme=slate                # cool blue-grey
+tq --types="dev,review,meeting" # custom task types
 ```
 
-Press `T` (Shift+T) to cycle themes on the fly.
+Press `T` (Shift+T) to cycle themes. Use `--types` to define your own task categories (default: `thinking,build,design,admin`).
 
 ## Keybindings
 
@@ -80,7 +83,7 @@ Press `T` (Shift+T) to cycle themes on the fly.
 |-----|--------|
 | Type | Enter task name |
 | `↑` / `↓` | Cycle energy level (MEDIUM → HIGH → LOW) |
-| `←` / `→` | Cycle task type (THINKING → BUILD → DESIGN → ADMIN) |
+| `←` / `→` | Cycle task type (based on `--types`, default: thinking → build → design → admin) |
 | `Enter` | Add task |
 | `Esc` | Cancel |
 
@@ -97,15 +100,15 @@ Press `T` (Shift+T) to cycle themes on the fly.
 
 | Theme | Primary | Dim | Vibe |
 |-------|---------|-----|------|
-| **Amber** (default) | `#e1a72a` | `#996c20` | Warm retro terminal |
+| **Grey** (default) | `#cccccc` | `#888888` | Clean monochrome |
 | **Mono Grey** | `#cccccc` | `#888888` | Clean monochrome |
 | **Slate** | `#94a8b8` | `#5a6e7e` | Cool blue-grey |
 
-Press `T` to cycle through them, or start with `tq --theme=slate`.
+Press `T` (Shift+T) to cycle through them.
 
 ## Data
 
-Tasks are stored in `~/.taskqueue/tasks.json` as plain JSON. No database, no cloud, no account. 
+Tasks are stored in `~/.taskqueue/tasks.json` as plain JSON. No database, no cloud, no account.
 
 ```json
 [

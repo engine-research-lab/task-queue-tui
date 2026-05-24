@@ -1,8 +1,5 @@
-/** Energy level for a task */
+/** Energy level for a task — always low/medium/high */
 export type EnergyLevel = 'low' | 'medium' | 'high';
-
-/** Task type category */
-export type TaskType = 'design' | 'admin' | 'thinking' | 'build';
 
 /** Task status in the queue lifecycle */
 export type TaskStatus = 'queued' | 'active' | 'completed';
@@ -12,7 +9,7 @@ export interface Task {
   id: string;
   name: string;
   energy_level: EnergyLevel;
-  task_type: TaskType;
+  task_type: string;
   definition_of_done: string;
   sub_steps: string[];
   status: TaskStatus;
@@ -28,38 +25,28 @@ export interface TaskStats {
   total: number;
 }
 
-/** Display helpers */
-export const TYPE_LABELS: Record<TaskType, string> = {
-  design: 'DSN',
-  admin: 'ADM',
-  thinking: 'THK',
-  build: 'BLD',
-};
+/** Auto-generate a short label from a type name (e.g. "research" → "RES") */
+export function typeLabel(type: string): string {
+  // Use first 3 uppercase letters of each word
+  return type
+    .split(/[\s_-]+/)
+    .map(w => w.slice(0, 3).toUpperCase())
+    .join('')
+    .slice(0, 4);
+}
 
-export const TYPE_NAMES: Record<TaskType, string> = {
-  design: 'DESIGN',
-  admin: 'ADMIN',
-  thinking: 'THINKING',
-  build: 'BUILD',
-};
+/** Format a type name for display (e.g. "deep_work" → "DEEP WORK") */
+export function typeDisplay(type: string): string {
+  return type
+    .replace(/[_-]/g, ' ')
+    .toUpperCase();
+}
 
-export const ENERGY_LABELS: Record<EnergyLevel, string> = {
-  low: 'LOW',
-  medium: 'MED',
-  high: 'HIGH',
-};
-
+/** Display helpers for energy (always fixed) */
 export const ENERGY_NAMES: Record<EnergyLevel, string> = {
   low: 'LOW',
   medium: 'MEDIUM',
   high: 'HIGH',
 };
 
-export const ENERGY_BARS: Record<EnergyLevel, string> = {
-  low: '▓░░',
-  medium: '▓▓░',
-  high: '▓▓▓',
-};
-
 export const ALL_ENERGY_LEVELS: EnergyLevel[] = ['low', 'medium', 'high'];
-export const ALL_TASK_TYPES: TaskType[] = ['design', 'admin', 'thinking', 'build'];

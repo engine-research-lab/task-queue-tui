@@ -1,13 +1,18 @@
 import blessed from 'blessed';
 import type { Task } from './types';
-import { TYPE_LABELS, ENERGY_BARS, ENERGY_NAMES, ALL_ENERGY_LEVELS, ALL_TASK_TYPES } from './types';
+import { typeLabel, typeDisplay, ENERGY_NAMES, ALL_ENERGY_LEVELS } from './types';
 import * as db from './db';
 import type { ThemeColors } from './theme';
 import { getTheme, nextTheme } from './theme';
 
-// Parse initial theme from CLI
+// Parse CLI args
 const cliTheme = process.argv.find(a => a.startsWith('--theme='));
-const initThemeName = cliTheme ? cliTheme.split('=')[1] : 'amber';
+const initThemeName = cliTheme ? cliTheme.split('=')[1] : 'grey';
+const typesArg = process.argv.find(a => a.startsWith('--types='));
+const DEFAULT_TYPES = ['thinking', 'build', 'design', 'admin'];
+const taskTypes: string[] = typesArg
+  ? typesArg.split('=')[1].split(',').map(t => t.trim()).filter(Boolean)
+  : DEFAULT_TYPES;
 
 // Current theme colors — module-level, swapped on theme change
 let C: ThemeColors = getTheme(initThemeName).colors;
@@ -47,10 +52,10 @@ function oc() { return close(C.orange); }
 function sc() {
   const w = cw(), tasks = db.getQueued(), act = db.getActive(), st = db.getStats();
   const n = tasks.length + (act ? 1 : 0);
-  const stag = act ? `${grf()}● ACTIVE${grc()}` : `${grf()}● ONLINE${grc()}`;
-  const l = `TASK QUEUE v2.0  ${stag}  ${n === 1 ? '1 TASK' : `${n} TASKS`}`;
-  const r = `TODAY:${st.today} WEEK:${st.week} ${ns()}`;
-  return `{bold}${pf()}${l}${pc()}{/bold}${' '.repeat(Math.max(1, w - l.length - r.length - 4))}${gf()}${r}${gc()}`;
+  const left = `TASK QUEUE v2.0  ${n === 1 ? '1 TASK' : `${n} TASKS`}`;
+  const right = `TODAY:${st.today}  WEEK:${st.week}  ${ns()}`;
+  const pad = Math.max(1, w - left.length - right.length - 3);
+  return `{bold}${pf()}${left}${pc()}{/bold}${' '.repeat(pad)}${gf()}${right}${gc()}`;
 }
 
 function sp() { return `${df()}${'─'.repeat(Math.max(0, cw()))}${dc()}`; }
@@ -74,7 +79,7 @@ function dl() {
   const q = db.getQueued();
   if (q.length === 0 || sel >= q.length) return '';
   const t = q[sel];
-  return `${gf()}TYPE:${TYPE_LABELS[t.task_type]}  ENERGY:${ENERGY_NAMES[t.energy_level]}${gc()}`;
+  return `${gf()}TYPE:${typeLabel(t.task_type)}  ENERGY:${ENERGY_NAMES[t.energy_level]}${gc()}`;
 }
 
 function fc() {
@@ -86,7 +91,7 @@ function fc() {
 // ─── Add bar ───────────────────────────────────────────────
 
 function abc(): string {
-  const en = ALL_ENERGY_LEVELS[ae], ty = ALL_TASK_TYPES[at];
+  const en = ALL_ENERGY_LEVELS[ae], ty = taskTypes[at];
   const cur = '█';
   const namePart = an.length > 0
     ? `${pf()}${an}${pc()}{bold}${pf()}${cur}${pc()}{/bold}`
@@ -94,7 +99,7 @@ function abc(): string {
   return (
     `{bold}${pf()}>${pc()}{/bold} ${namePart}\n` +
     `${df()}ENERGY:${dc()} ${pf()}${ENERGY_NAMES[en]}${pc()}` +
-    `  ${df()}TYPE:${dc()} ${pf()}${TYPE_LABELS[ty]}${pc()}`
+    `  ${df()}TYPE:${dc()} ${pf()}${typeLabel(ty)}${pc()}`
   );
 }
 
@@ -123,7 +128,7 @@ function efc() {
   const task = db.getTask(editId);
   if (!task) return '';
   const es = ef === 0 ? `{bold}${pf()}< ${ENERGY_NAMES[ALL_ENERGY_LEVELS[ee]]} >${pc()}{/bold}` : `${df()}  ${ENERGY_NAMES[ALL_ENERGY_LEVELS[ee]]}  ${dc()}`;
-  const ts = ef === 1 ? `{bold}${pf()}< ${TYPE_LABELS[ALL_TASK_TYPES[et]]} >${pc()}{/bold}` : `${df()}  ${TYPE_LABELS[ALL_TASK_TYPES[et]]}  ${dc()}`;
+  const ts = ef === 1 ? `{bold}${pf()}< ${typeLabel(taskTypes[et])} >${pc()}{/bold}` : `${df()}  ${typeLabel(taskTypes[et])}  ${dc()}`;
   return (
     `  ${df()}─── EDIT TASK ──────────────────────────────────${dc()}\n` +
     `  ${gf()}Editing:${gc()} ${pf()}${task.name}${pc()}\n` +
@@ -316,13 +321,13 @@ export function buildUI() {
       if (name === 'escape') { goQueue(); return; }
       if (name === 'enter') {
         if (!an.trim()) { toast('Task name required'); return; }
-        db.addTask(an.trim(), ALL_ENERGY_LEVELS[ae], ALL_TASK_TYPES[at]);
+        db.addTask(an.trim(), ALL_ENERGY_LEVELS[ae], taskTypes[at]);
         an = ''; toast('Task added'); goQueue(); return;
       }
       if (name === 'up') { ae = (ae + 1) % 3; refresh(); return; }
       if (name === 'down') { ae = (ae - 1 + 3) % 3; refresh(); return; }
       if (name === 'right') { at = (at + 1) % 4; refresh(); return; }
-      if (name === 'left') { at = (at - 1 + 4) % 4; refresh(); return; }
+      if (name === 'left') { at = (at - 1 + taskTypes.length) % taskTypes.length; refresh(); return; }
       if (name === 'backspace') { an = an.slice(0, -1); refresh(); return; }
       if (ch && ch.length === 1 && ch.charCodeAt(0) >= 32) { an += ch; refresh(); }
       return;
@@ -332,14 +337,14 @@ export function buildUI() {
       if (name === 'escape') { goQueue(); return; }
       if (name === 'enter') {
         if (!editId) return;
-        db.updateTask(editId, { energy_level: ALL_ENERGY_LEVELS[ee], task_type: ALL_TASK_TYPES[et] });
+        db.updateTask(editId, { energy_level: ALL_ENERGY_LEVELS[ee], task_type: taskTypes[et] });
         editId = null; toast('Task updated'); goQueue(); return;
       }
       if (name === 'tab') { ef = (ef + 1) % 2; refresh(); return; }
       if (name === 'left' || name === 'right') {
         const d = name === 'left' ? -1 : 1;
         if (ef === 0) ee = (ee + d + 3) % 3;
-        else et = (et + d + 4) % 4;
+        else et = (et + d + taskTypes.length) % taskTypes.length;
         refresh(); return;
       }
       return;
@@ -368,7 +373,8 @@ export function buildUI() {
       if (q.length === 0 || sel >= q.length) return;
       const t = q[sel]; editId = t.id; ef = 0;
       ee = ALL_ENERGY_LEVELS.indexOf(t.energy_level);
-      et = ALL_TASK_TYPES.indexOf(t.task_type);
+      et = taskTypes.indexOf(t.task_type);
+      if (et < 0) et = 0;
       mode = 'edit'; refresh(); return;
     }
     if (name === 'd') {
