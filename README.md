@@ -29,6 +29,8 @@ tq                              # grey theme
 tq --theme=amber                # warm retro theme
 tq --theme=slate                # cool blue-grey theme
 tq --types="dev,review,admin"   # custom task types
+tq --help                       # show commands
+tq --version                    # show installed version
 ```
 
 Tasks are stored as plain JSON in `~/.taskqueue/tasks.json`.
@@ -42,8 +44,10 @@ Tasks are stored as plain JSON in `~/.taskqueue/tasks.json`.
 | `Up` / `Down` or `j` / `k` | Navigate tasks |
 | `Space` / `Enter` | Pull next task into focus mode |
 | `a` | Add a task |
-| `e` | Edit selected task |
+| `e` | Rename or edit selected task |
 | `d` | Delete selected task |
+| `u` | Undo last delete |
+| `h` | View completed task history |
 | `J` / `K` | Reorder selected task |
 | `T` | Cycle theme |
 | `q` | Quit |
@@ -55,6 +59,24 @@ Tasks are stored as plain JSON in `~/.taskqueue/tasks.json`.
 | `f` | Finish task |
 | `r` | Return task to queue |
 | `Space` / `Enter` | Swap with first queued task |
+| `q` / `Esc` | Return to queue |
+
+### Edit
+
+| Key | Action |
+|-----|--------|
+| Type | Rename task |
+| `Tab` | Move between name, energy, and type |
+| `Left` / `Right` | Change energy or type |
+| `Enter` | Save |
+| `Esc` | Cancel |
+
+### History
+
+| Key | Action |
+|-----|--------|
+| `h` | Open or close completed history |
+| `Up` / `Down` or `j` / `k` | Browse completed tasks |
 | `q` / `Esc` | Return to queue |
 
 ## Install From Source

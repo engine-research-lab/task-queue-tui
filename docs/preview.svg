@@ -16,5 +16,5 @@
   <text x="34" y="344" fill="#d0d0d0" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="18">Refactor auth middleware                                               MEDIUM</text>
   <text x="34" y="395" fill="#777777" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="18">TYPE:DES  ENERGY:MEDIUM</text>
   <text x="34" y="428" fill="#555555" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="18">--------------------------------------------------------------------------------</text>
-  <text x="34" y="462" fill="#777777" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="18">A Add  Up/Dn Move  E Edit  D Del  J/K Reorder  Space Pull  T Theme  Q Quit</text>
+  <text x="34" y="462" fill="#777777" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="18">A Add  E Edit  D Del  U Undo  H Hist  J/K Move  Space Pull  T Theme  Q Quit</text>
 </svg>

@@ -1,6 +1,6 @@
 {
   "name": "task-queue-tui",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "A minimal terminal task queue for doing one task at a time.",
   "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/engine-research-lab/task-queue-tui#readme",

@@ -40,14 +40,16 @@ const initTheme = getTheme(initThemeName);
 let C: ThemeColors = initTheme.colors;
 let currentTheme = initTheme.name;
 
-type Mode = 'queue' | 'focus' | 'add' | 'edit';
+type Mode = 'queue' | 'focus' | 'add' | 'edit' | 'history';
 
 let mode: Mode = 'queue';
-let sel = 0, editId: string | null = null, elapsed = 0;
+let sel = 0, hsel = 0, editId: string | null = null, elapsed = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 let toaster: ReturnType<typeof setTimeout> | null = null;
 let an = '', ae = 1, at = Math.min(DEFAULT_TYPE_INDEX, taskTypes.length - 1);
 let ef = 0, ee = 1, et = Math.min(DEFAULT_TYPE_INDEX, taskTypes.length - 1);
+let editName = '';
+let lastDeleted: Task | null = null;
 
 function p2(n: number) { return n < 10 ? '0' + n : '' + n; }
 function ft(s: number) { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60; return h > 0 ? `${p2(h)}:${p2(m)}:${p2(sec)}` : `${p2(m)}:${p2(sec)}`; }
@@ -111,6 +113,12 @@ function tl(t: Task) {
   return `${parts.left}${parts.pad}${parts.right}`;
 }
 
+function hl(t: Task) {
+  const completed = (t.completed_at ?? t.created_at).slice(0, 10);
+  const parts = fitPair(t.name, completed, iw(4));
+  return `${parts.left}${parts.pad}${parts.right}`;
+}
+
 function dl() {
   if (mode === 'add') return '';
   const q = db.getQueued();
@@ -119,16 +127,28 @@ function dl() {
   return `${gf()}TYPE:${typeLabel(t.task_type)}  ENERGY:${ENERGY_NAMES[t.energy_level]}${gc()}`;
 }
 
+function hd() {
+  const done = db.getCompleted(100);
+  if (done.length === 0 || hsel >= done.length) return `${gf()}No completed tasks yet${gc()}`;
+  const t = done[hsel];
+  const when = t.completed_at ? t.completed_at.slice(0, 10) : 'unknown date';
+  return `${gf()}COMPLETED:${done.length}  ${when}  TYPE:${typeLabel(t.task_type)}  ENERGY:${ENERGY_NAMES[t.energy_level]}${gc()}`;
+}
+
 function fc() {
   const width = iw(2);
   const items = mode === 'focus'
     ? ['[F]inish', '[R]eturn', '[SPACE] Swap', '[Q]uit focus']
     : mode === 'add'
       ? ['[ENTER] Add', '[UP/DOWN] Energy', '[LEFT/RIGHT] Type', '[ESC] Cancel']
-      : ['[A]dd', '[UP/DOWN]', '[E]dit', '[D]elete', '[J/K] Reorder', '[SPACE] Pull', '[T]heme', '[Q]uit'];
+      : mode === 'edit'
+        ? ['[TAB] Field', '[LEFT/RIGHT] Change', '[ENTER] Save', '[ESC] Cancel']
+        : mode === 'history'
+          ? ['[UP/DOWN] History', '[H] Queue', '[Q] Queue', '[ESC] Queue']
+          : ['[A]dd', '[UP/DOWN]', '[E]dit', '[D]elete', '[U]ndo', '[H]istory', '[J/K] Reorder', '[SPACE] Pull', '[T]heme', '[Q]uit'];
   const full = items.join('  ');
   const compact = mode === 'queue'
-    ? 'A Add  Up/Dn Move  E Edit  D Del  J/K Reorder  Space Pull  T Theme  Q Quit'
+    ? 'A Add  E Edit  D Del  U Undo  H Hist  J/K Move  Space Pull  T Theme  Q Quit'
     : full;
   return `${gf()}${trunc(full.length <= width ? full : compact, width)}${gc()}`;
 }
@@ -174,14 +194,16 @@ function efc() {
   if (!editId) return '';
   const task = db.getTask(editId);
   if (!task) return '';
-  const es = ef === 0 ? `${pf()}< ${ENERGY_NAMES[ALL_ENERGY_LEVELS[ee]]} >${pc()}` : `${df()}  ${ENERGY_NAMES[ALL_ENERGY_LEVELS[ee]]}  ${dc()}`;
-  const ts = ef === 1 ? `${pf()}< ${typeLabel(taskTypes[et])} >${pc()}` : `${df()}  ${typeLabel(taskTypes[et])}  ${dc()}`;
+  const nameValue = editName.length > 0 ? editName : '';
+  const ns = ef === 0 ? `${pf()}${trunc(nameValue, iw(4) - 12)}_${pc()}` : `${df()}${trunc(nameValue, iw(4) - 12)}${dc()}`;
+  const es = ef === 1 ? `${pf()}< ${ENERGY_NAMES[ALL_ENERGY_LEVELS[ee]]} >${pc()}` : `${df()}  ${ENERGY_NAMES[ALL_ENERGY_LEVELS[ee]]}  ${dc()}`;
+  const ts = ef === 2 ? `${pf()}< ${typeLabel(taskTypes[et])} >${pc()}` : `${df()}  ${typeLabel(taskTypes[et])}  ${dc()}`;
   return (
     `  ${df()}--- EDIT TASK -----------------------------------${dc()}\n` +
-    `  ${gf()}Editing:${gc()} ${pf()}${trunc(task.name, iw(4) - 13)}${pc()}\n` +
+    `  Name:   ${ns}\n` +
     `  Energy: ${es}\n` +
     `  Type:   ${ts}\n` +
-    `  ${gf()}[TAB] Next  [LEFT/RIGHT] Change  [ENTER] Save  [ESC] Cancel${gc()}`
+    `  ${gf()}[TAB] Next  type to rename  [ENTER] Save  [ESC] Cancel${gc()}`
   );
 }
 
@@ -237,6 +259,21 @@ function refresh() {
   } else if (mode === 'edit') {
     ui.queueBox.hide(); ui.focusBox.hide(); ui.editBox.show(); ui.pullBtn.setContent('');
     ui.editBox.setContent(efc());
+  } else if (mode === 'history') {
+    ui.focusBox.hide(); ui.editBox.hide(); ui.addBar.hide();
+    (ui.queueBox as any).bottom = 4;
+    ui.queueBox.show();
+    ui.pullBtn.setContent(`\n${pf()}COMPLETED TASKS${pc()}\n`);
+    ui.detailLine.setContent(hd());
+
+    const done = db.getCompleted(100);
+    if (done.length === 0) {
+      ui.taskList.setItems([`${df()}(no completed tasks yet)${dc()}`]);
+    } else {
+      if (hsel >= done.length) hsel = Math.max(0, done.length - 1);
+      ui.taskList.setItems(done.map(t => hl(t)));
+      ui.taskList.select(hsel);
+    }
   } else if (mode === 'add') {
     ui.queueBox.show(); ui.focusBox.hide(); ui.editBox.hide();
     (ui.queueBox as any).bottom = 6;
@@ -246,7 +283,10 @@ function refresh() {
     ui.detailLine.setContent('');
     const q = db.getQueued();
     if (q.length === 0) {
-      ui.taskList.setItems([`${df()}(queue empty - type name below)${dc()}`]);
+      ui.taskList.setItems([
+        `${df()}Add your first task below.${dc()}`,
+        `${df()}Press ENTER to save it, then SPACE to focus.${dc()}`,
+      ]);
     } else {
       if (sel >= q.length) sel = Math.max(0, q.length - 1);
       ui.taskList.setItems(q.map(t => tl(t)));
@@ -260,7 +300,11 @@ function refresh() {
 
     const q = db.getQueued();
     if (q.length === 0) {
-      ui.taskList.setItems([`${df()}(queue empty - press [A] to add)${dc()}`]);
+      ui.taskList.setItems([
+        `${pf()}Welcome to tq.${pc()}`,
+        `${df()}Press A to add your first task.${dc()}`,
+        `${df()}When it is ready, press SPACE to pull it into focus.${dc()}`,
+      ]);
     } else {
       if (sel >= q.length) sel = Math.max(0, q.length - 1);
       ui.taskList.setItems(q.map(t => tl(t)));
@@ -382,19 +426,32 @@ export function buildUI() {
     }
 
     if (mode === 'edit') {
-      if (name === 'escape') { goQueue(); return; }
+      if (name === 'escape') { editId = null; editName = ''; goQueue(); return; }
       if (name === 'enter') {
         if (!editId) return;
-        db.updateTask(editId, { energy_level: ALL_ENERGY_LEVELS[ee], task_type: taskTypes[et] });
-        editId = null; toast('Task updated'); goQueue(); return;
+        const trimmedName = editName.trim();
+        if (!trimmedName) { toast('Task name required'); return; }
+        db.updateTask(editId, { name: trimmedName, energy_level: ALL_ENERGY_LEVELS[ee], task_type: taskTypes[et] });
+        editId = null; editName = ''; toast('Task updated'); goQueue(); return;
       }
-      if (name === 'tab') { ef = (ef + 1) % 2; refresh(); return; }
+      if (name === 'tab') { ef = (ef + 1) % 3; refresh(); return; }
+      if (ef === 0) {
+        if (name === 'backspace') { editName = editName.slice(0, -1); refresh(); return; }
+        if (ch && ch.length === 1 && ch.charCodeAt(0) >= 32) { editName += ch; refresh(); return; }
+      }
       if (name === 'left' || name === 'right') {
         const d = name === 'left' ? -1 : 1;
-        if (ef === 0) ee = (ee + d + 3) % 3;
-        else et = (et + d + taskTypes.length) % taskTypes.length;
+        if (ef === 1) ee = (ee + d + 3) % 3;
+        else if (ef === 2) et = (et + d + taskTypes.length) % taskTypes.length;
         refresh(); return;
       }
+      return;
+    }
+
+    if (mode === 'history') {
+      if (name === 'q' || name === 'escape' || name === 'h') { goQueue(); return; }
+      if (name === 'up' || (name === 'k' && !shift)) { if (hsel > 0) { hsel--; refresh(); } return; }
+      if (name === 'down' || (name === 'j' && !shift)) { if (hsel < db.getCompleted(100).length - 1) { hsel++; refresh(); } return; }
       return;
     }
 
@@ -426,10 +483,19 @@ export function buildUI() {
     if (name === 'down' || (name === 'j' && !shift)) { if (sel < db.getQueued().length - 1) { sel++; ui.taskList.select(sel); refresh(); } return; }
     if (name === 'space' || name === 'enter') { const p = db.pullNext(); if (p) { toast(`Pulled: ${p.name}`); goFocus(); } else toast('No tasks to pull'); return; }
     if (name === 'a') { mode = 'add'; ae = 1; at = Math.min(DEFAULT_TYPE_INDEX, taskTypes.length - 1); an = ''; refresh(); return; }
+    if (name === 'h') { mode = 'history'; hsel = 0; refresh(); return; }
+    if (name === 'u') {
+      if (!lastDeleted) { toast('Nothing to undo'); return; }
+      const restored = db.restoreTask(lastDeleted);
+      if (restored) { lastDeleted = null; toast(`Restored: ${restored.name}`); refresh(); }
+      else { toast('Could not restore task'); }
+      return;
+    }
     if (name === 'e') {
       const q = db.getQueued();
       if (q.length === 0 || sel >= q.length) return;
       const t = q[sel]; editId = t.id; ef = 0;
+      editName = t.name;
       ee = ALL_ENERGY_LEVELS.indexOf(t.energy_level);
       et = taskTypes.indexOf(t.task_type);
       if (et < 0) et = 0;
@@ -438,7 +504,8 @@ export function buildUI() {
     if (name === 'd') {
       const q = db.getQueued();
       if (q.length === 0 || sel >= q.length) return;
-      db.deleteTask(q[sel].id); toast('Deleted');
+      lastDeleted = { ...q[sel], sub_steps: [...q[sel].sub_steps] };
+      db.deleteTask(q[sel].id); toast('Deleted. Press U to undo');
       if (sel >= db.getQueued().length) sel = Math.max(0, db.getQueued().length - 1);
       refresh(); return;
     }

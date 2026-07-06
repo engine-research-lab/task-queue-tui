@@ -116,6 +116,26 @@ test('invalid JSON is backed up instead of overwritten', () => {
   }
 });
 
+test('restoreTask puts a deleted queued task back in order', () => {
+  const { dir } = useTempDb();
+  try {
+    db.addTask('One', 'medium', 'build');
+    const deleted = db.addTask('Two', 'medium', 'build');
+    db.addTask('Three', 'medium', 'build');
+
+    assert.equal(db.deleteTask(deleted.id), true);
+    assert.deepEqual(db.getQueued().map(task => task.name), ['One', 'Three']);
+
+    assert.equal(db.restoreTask(deleted)?.name, 'Two');
+    assert.deepEqual(
+      db.getQueued().map(task => [task.name, task.position]),
+      [['One', 0], ['Two', 1], ['Three', 2]],
+    );
+  } finally {
+    cleanup(dir);
+  }
+});
+
 function taskFixture(overrides) {
   return {
     id: 'id',

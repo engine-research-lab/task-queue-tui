@@ -211,6 +211,25 @@ export function deleteTask(id: string): boolean {
   return true;
 }
 
+/** Restore a previously deleted task */
+export function restoreTask(task: Task): Task | null {
+  const tasks = load();
+  if (tasks.some(t => t.id === task.id)) return null;
+
+  const restored: Task = { ...task };
+  if (restored.status === 'queued') {
+    const position = Number.isFinite(restored.position) ? restored.position : maxQueuedPosition(tasks) + 1;
+    for (const queued of tasks.filter(t => t.status === 'queued')) {
+      if (queued.position >= position) queued.position++;
+    }
+    restored.position = position;
+  }
+
+  tasks.push(restored);
+  save(tasks);
+  return restored;
+}
+
 /** Update task fields */
 export function updateTask(id: string, updates: Partial<Pick<Task, 'energy_level' | 'task_type' | 'name' | 'definition_of_done'>>): Task | null {
   const tasks = load();
