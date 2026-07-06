@@ -1,6 +1,25 @@
 {
   "name": "task-queue-tui",
   "version": "1.0.7",
+  "description": "A minimal terminal task queue for doing one task at a time.",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/engine-research-lab/task-queue-tui#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/engine-research-lab/task-queue-tui.git"
+  },
+  "bugs": {
+    "url": "https://github.com/engine-research-lab/task-queue-tui/issues"
+  },
+  "keywords": [
+    "cli",
+    "tui",
+    "terminal",
+    "tasks",
+    "queue",
+    "productivity",
+    "focus"
+  ],
   "bin": {
     "tq": "bin/tq.js"
   },
