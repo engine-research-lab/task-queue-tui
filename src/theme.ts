@@ -32,12 +32,13 @@ const slate: Theme = {
 };
 
 export const THEMES: Theme[] = [amber, grey, slate];
+const DEFAULT_THEME = grey;
 
 export function getTheme(name: string): Theme {
-  return THEMES.find(t => t.name === name) ?? amber;
+  return THEMES.find(t => t.name === name) ?? DEFAULT_THEME;
 }
 
 export function nextTheme(current: string): Theme {
   const idx = THEMES.findIndex(t => t.name === current);
-  return THEMES[(idx + 1) % THEMES.length];
+  return THEMES[(idx + 1) % THEMES.length] ?? DEFAULT_THEME;
 }

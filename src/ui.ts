@@ -1,6 +1,6 @@
 import blessed from 'blessed';
 import type { Task } from './types';
-import { typeLabel, typeDisplay, ENERGY_NAMES, ALL_ENERGY_LEVELS } from './types';
+import { typeLabel, ENERGY_NAMES, ALL_ENERGY_LEVELS } from './types';
 import * as db from './db';
 import type { ThemeColors } from './theme';
 import { getTheme, nextTheme } from './theme';
@@ -10,13 +10,35 @@ const cliTheme = process.argv.find(a => a.startsWith('--theme='));
 const initThemeName = cliTheme ? cliTheme.split('=')[1] : 'grey';
 const typesArg = process.argv.find(a => a.startsWith('--types='));
 const DEFAULT_TYPES = ['thinking', 'build', 'design', 'admin'];
-const taskTypes: string[] = typesArg
-  ? typesArg.split('=')[1].split(',').map(t => t.trim()).filter(Boolean)
-  : DEFAULT_TYPES;
+const DEFAULT_TYPE_INDEX = 2;
 
-// Current theme colors — module-level, swapped on theme change
-let C: ThemeColors = getTheme(initThemeName).colors;
-let currentTheme = initThemeName;
+function parseTaskTypes(): string[] {
+  if (!typesArg) return DEFAULT_TYPES;
+
+  const seen = new Set<string>();
+  const parsed = typesArg
+    .split('=')
+    .slice(1)
+    .join('=')
+    .split(',')
+    .map(t => t.trim())
+    .filter(t => t.length > 0 && t.length <= 20)
+    .filter(t => {
+      const key = t.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+  return parsed.length > 0 ? parsed : DEFAULT_TYPES;
+}
+
+const taskTypes: string[] = parseTaskTypes();
+
+// Current theme colors - module-level, swapped on theme change
+const initTheme = getTheme(initThemeName);
+let C: ThemeColors = initTheme.colors;
+let currentTheme = initTheme.name;
 
 type Mode = 'queue' | 'focus' | 'add' | 'edit';
 
@@ -24,13 +46,29 @@ let mode: Mode = 'queue';
 let sel = 0, editId: string | null = null, elapsed = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 let toaster: ReturnType<typeof setTimeout> | null = null;
-let an = '', ae = 1, at = 2;
-let ef = 0, ee = 1, et = 2;
+let an = '', ae = 1, at = Math.min(DEFAULT_TYPE_INDEX, taskTypes.length - 1);
+let ef = 0, ee = 1, et = Math.min(DEFAULT_TYPE_INDEX, taskTypes.length - 1);
 
 function p2(n: number) { return n < 10 ? '0' + n : '' + n; }
 function ft(s: number) { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60; return h > 0 ? `${p2(h)}:${p2(m)}:${p2(sec)}` : `${p2(m)}:${p2(sec)}`; }
 function ns() { return new Date().toLocaleTimeString('en-US', { hour12: false }); }
 function cw() { return process.stdout.columns || 80; }
+function iw(inset: number) { return Math.max(20, cw() - inset); }
+function trunc(s: string, max: number) {
+  if (max <= 0) return '';
+  if (s.length <= max) return s;
+  if (max <= 3) return s.slice(0, max);
+  return s.slice(0, max - 3) + '...';
+}
+function fitPair(left: string, right: string, width: number, minPad = 1) {
+  if (right.length >= width) return { left: '', pad: '', right: trunc(right, width) };
+  const fittedLeft = trunc(left, width - right.length - minPad);
+  return {
+    left: fittedLeft,
+    pad: ' '.repeat(Math.max(0, width - fittedLeft.length - right.length)),
+    right,
+  };
+}
 
 // Shortcuts for color tags
 function fg(c: string) { return `{${c}-fg}`; }
@@ -42,36 +80,35 @@ function df() { return fg(C.dim); }
 function dc() { return close(C.dim); }
 function gf() { return fg(C.gray); }
 function gc() { return close(C.gray); }
-function grf() { return fg(C.green); }
-function grc() { return close(C.green); }
 function of() { return fg(C.orange); }
 function oc() { return close(C.orange); }
 
 // ─── Content builders ──────────────────────────────────────
 
 function sc() {
-  const w = cw(), tasks = db.getQueued(), act = db.getActive(), st = db.getStats();
+  const tasks = db.getQueued(), act = db.getActive(), st = db.getStats();
   const n = tasks.length + (act ? 1 : 0);
-  const left = `TASK QUEUE v2.0  ${n === 1 ? '1 TASK' : `${n} TASKS`}`;
+  const width = iw(2);
   const right = `TODAY:${st.today}  WEEK:${st.week}  ${ns()}`;
-  const pad = Math.max(1, w - left.length - right.length - 3);
-  return `{bold}${pf()}${left}${pc()}{/bold}${' '.repeat(pad)}${gf()}${right}${gc()}`;
+  const parts = fitPair(`TASK QUEUE v2.0  ${n === 1 ? '1 TASK' : `${n} TASKS`}`, right, width);
+  return `${pf()}${parts.left}${pc()}${parts.pad}${gf()}${parts.right}${gc()}`;
 }
 
-function sp() { return `${df()}${'─'.repeat(Math.max(0, cw()))}${dc()}`; }
+function sp() { return `${df()}${'-'.repeat(Math.max(0, cw()))}${dc()}`; }
 
 function pb() {
   const q = db.getQueued();
   if (q.length === 0) return '';
-  return `\n{bold}${pf()}→ PULL NEXT TASK${pc()}{/bold}                  ${df()}[SPACE]${dc()}\n`;
+  const left = '> PULL NEXT TASK';
+  const right = '[SPACE]';
+  const parts = fitPair(left, right, iw(4));
+  return `\n${pf()}${parts.left}${pc()}${parts.pad}${df()}${parts.right}${dc()}\n`;
 }
 
 function tl(t: Task) {
   const bar = ENERGY_NAMES[t.energy_level];
-  const w = cw(), maxName = Math.max(10, w - bar.length - 6);
-  const name = t.name.length > maxName ? t.name.slice(0, maxName - 1) + '…' : t.name;
-  const pad = Math.max(1, w - name.length - bar.length - 4);
-  return `${name}${' '.repeat(pad)}${bar}`;
+  const parts = fitPair(t.name, bar, iw(4));
+  return `${parts.left}${parts.pad}${parts.right}`;
 }
 
 function dl() {
@@ -83,21 +120,30 @@ function dl() {
 }
 
 function fc() {
-  if (mode === 'focus') return `${gf()}[F]inish  [R]eturn  [SPACE] Swap  [Q]uit focus${gc()}`;
-  if (mode === 'add') return `${gf()}[ENTER] Add  [↑/↓] Energy  [←/→] Type  [ESC] Cancel${gc()}`;
-  return `${gf()}[A]dd  [↑/↓]  [E]dit  [D]elete  [J/K] Reorder  [SPACE] Pull  [T]heme  [Q]uit${gc()}`;
+  const width = iw(2);
+  const items = mode === 'focus'
+    ? ['[F]inish', '[R]eturn', '[SPACE] Swap', '[Q]uit focus']
+    : mode === 'add'
+      ? ['[ENTER] Add', '[UP/DOWN] Energy', '[LEFT/RIGHT] Type', '[ESC] Cancel']
+      : ['[A]dd', '[UP/DOWN]', '[E]dit', '[D]elete', '[J/K] Reorder', '[SPACE] Pull', '[T]heme', '[Q]uit'];
+  const full = items.join('  ');
+  const compact = mode === 'queue'
+    ? 'A Add  Up/Dn Move  E Edit  D Del  J/K Reorder  Space Pull  T Theme  Q Quit'
+    : full;
+  return `${gf()}${trunc(full.length <= width ? full : compact, width)}${gc()}`;
 }
 
 // ─── Add bar ───────────────────────────────────────────────
 
 function abc(): string {
   const en = ALL_ENERGY_LEVELS[ae], ty = taskTypes[at];
-  const cur = '█';
+  const cur = '_';
+  const inputWidth = Math.max(10, iw(4) - 2);
   const namePart = an.length > 0
-    ? `${pf()}${an}${pc()}{bold}${pf()}${cur}${pc()}{/bold}`
-    : `{bold}${pf()}${cur}${pc()}{/bold}${df()}  type task name...${dc()}`;
+    ? `${pf()}${trunc(an, inputWidth)}${cur}${pc()}`
+    : `${pf()}${cur}${pc()}${df()}  type task name...${dc()}`;
   return (
-    `{bold}${pf()}>${pc()}{/bold} ${namePart}\n` +
+    `${pf()}>${pc()} ${namePart}\n` +
     `${df()}ENERGY:${dc()} ${pf()}${ENERGY_NAMES[en]}${pc()}` +
     `  ${df()}TYPE:${dc()} ${pf()}${typeLabel(ty)}${pc()}`
   );
@@ -106,11 +152,12 @@ function abc(): string {
 // ─── Focus mode ────────────────────────────────────────────
 
 function fh(act: Task) {
-  const ts = ft(elapsed), w = cw(), label = 'ACTIVE TASK';
-  return `{bold}${pf()}${label}${pc()}{/bold}${' '.repeat(Math.max(1, w - label.length - ts.length - 6))}${of()}[${ts}]${oc()}`;
+  const ts = `[${ft(elapsed)}]`, label = 'ACTIVE TASK';
+  const parts = fitPair(label, ts, iw(4));
+  return `${pf()}${parts.left}${pc()}${parts.pad}${of()}${parts.right}${oc()}`;
 }
 function fti() { return `${of()}ELAPSED: ${ft(elapsed)}${oc()}`; }
-function fa() { return `  {bold}${pf()}[F]${pc()}{/bold}${gf()}inish${gc()}  {bold}${pf()}[R]${pc()}{/bold}${gf()}eturn${gc()}  {bold}${pf()}[SPACE]${pc()}{/bold}${gf()}Swap${gc()}`; }
+function fa() { return `  ${pf()}[F]${pc()}${gf()}inish${gc()}  ${pf()}[R]${pc()}${gf()}eturn${gc()}  ${pf()}[SPACE]${pc()}${gf()} Swap${gc()}`; }
 function fs(act: Task) {
   let s = '';
   if (act.definition_of_done) s += `\n  ${df()}Definition of done:${dc()}\n  ${pf()}${act.definition_of_done}${pc()}\n`;
@@ -127,14 +174,14 @@ function efc() {
   if (!editId) return '';
   const task = db.getTask(editId);
   if (!task) return '';
-  const es = ef === 0 ? `{bold}${pf()}< ${ENERGY_NAMES[ALL_ENERGY_LEVELS[ee]]} >${pc()}{/bold}` : `${df()}  ${ENERGY_NAMES[ALL_ENERGY_LEVELS[ee]]}  ${dc()}`;
-  const ts = ef === 1 ? `{bold}${pf()}< ${typeLabel(taskTypes[et])} >${pc()}{/bold}` : `${df()}  ${typeLabel(taskTypes[et])}  ${dc()}`;
+  const es = ef === 0 ? `${pf()}< ${ENERGY_NAMES[ALL_ENERGY_LEVELS[ee]]} >${pc()}` : `${df()}  ${ENERGY_NAMES[ALL_ENERGY_LEVELS[ee]]}  ${dc()}`;
+  const ts = ef === 1 ? `${pf()}< ${typeLabel(taskTypes[et])} >${pc()}` : `${df()}  ${typeLabel(taskTypes[et])}  ${dc()}`;
   return (
-    `  ${df()}─── EDIT TASK ──────────────────────────────────${dc()}\n` +
-    `  ${gf()}Editing:${gc()} ${pf()}${task.name}${pc()}\n` +
+    `  ${df()}--- EDIT TASK -----------------------------------${dc()}\n` +
+    `  ${gf()}Editing:${gc()} ${pf()}${trunc(task.name, iw(4) - 13)}${pc()}\n` +
     `  Energy: ${es}\n` +
     `  Type:   ${ts}\n` +
-    `  ${gf()}[TAB] Next  [←/→] Change  [ENTER] Save  [ESC] Cancel${gc()}`
+    `  ${gf()}[TAB] Next  [LEFT/RIGHT] Change  [ENTER] Save  [ESC] Cancel${gc()}`
   );
 }
 
@@ -183,7 +230,7 @@ function refresh() {
     if (!act) { mode = 'queue'; refresh(); return; }
     ui.queueBox.hide(); ui.editBox.hide(); ui.focusBox.show(); ui.pullBtn.setContent('');
     ui.focusHeader.setContent(fh(act));
-    ui.focusName.setContent(`{bold}${pf()}${act.name}${pc()}{/bold}`);
+    ui.focusName.setContent(`${pf()}${trunc(act.name, iw(4))}${pc()}`);
     ui.focusTimer.setContent(fti());
     ui.focusSteps.setContent(fs(act));
     ui.focusActions.setContent(fa());
@@ -199,7 +246,7 @@ function refresh() {
     ui.detailLine.setContent('');
     const q = db.getQueued();
     if (q.length === 0) {
-      ui.taskList.setItems([`${df()}(queue empty → type name below)${dc()}`]);
+      ui.taskList.setItems([`${df()}(queue empty - type name below)${dc()}`]);
     } else {
       if (sel >= q.length) sel = Math.max(0, q.length - 1);
       ui.taskList.setItems(q.map(t => tl(t)));
@@ -213,7 +260,7 @@ function refresh() {
 
     const q = db.getQueued();
     if (q.length === 0) {
-      ui.taskList.setItems([`${df()}(queue empty — press [A] to add)${dc()}`]);
+      ui.taskList.setItems([`${df()}(queue empty - press [A] to add)${dc()}`]);
     } else {
       if (sel >= q.length) sel = Math.max(0, q.length - 1);
       ui.taskList.setItems(q.map(t => tl(t)));
@@ -273,7 +320,7 @@ export function buildUI() {
     parent: queueBox, top: 0, left: 2, right: 2, bottom: 0,
     keys: false, vi: false, tags: true, mouse: false,
     style: {
-      selected: { fg: C.primary, bold: true, inverse: true },
+      selected: { fg: C.primary, bold: false, inverse: true },
       item: { fg: C.primary },
     },
   });
@@ -303,7 +350,8 @@ export function buildUI() {
 
   ui = { screen, statusBar, statusLine, sep1, sep2, footer, pullBtn, queueBox, taskList, detailLine, addBar, focusBox, focusHeader, focusName, focusTimer, focusSteps, focusActions, editBox };
   applyThemeStyles();
-  goQueue();
+  if (db.getActive()) goFocus();
+  else goQueue();
 
   // ── Keyboard ────────────────────────────────────────
 
@@ -326,7 +374,7 @@ export function buildUI() {
       }
       if (name === 'up') { ae = (ae + 1) % 3; refresh(); return; }
       if (name === 'down') { ae = (ae - 1 + 3) % 3; refresh(); return; }
-      if (name === 'right') { at = (at + 1) % 4; refresh(); return; }
+      if (name === 'right') { at = (at + 1) % taskTypes.length; refresh(); return; }
       if (name === 'left') { at = (at - 1 + taskTypes.length) % taskTypes.length; refresh(); return; }
       if (name === 'backspace') { an = an.slice(0, -1); refresh(); return; }
       if (ch && ch.length === 1 && ch.charCodeAt(0) >= 32) { an += ch; refresh(); }
@@ -364,10 +412,20 @@ export function buildUI() {
     }
 
     // Queue mode
-    if (name === 'up' || name === 'k') { if (sel > 0) { sel--; ui.taskList.select(sel); refresh(); } return; }
-    if (name === 'down' || name === 'j') { if (sel < db.getQueued().length - 1) { sel++; ui.taskList.select(sel); refresh(); } return; }
+    if (name === 'k' && shift) {
+      const q = db.getQueued();
+      if (q.length > 0 && sel < q.length && db.reorderTask(q[sel].id, 'up')) { if (sel > 0) sel--; refresh(); }
+      return;
+    }
+    if (name === 'j' && shift) {
+      const q = db.getQueued();
+      if (q.length > 0 && sel < q.length && db.reorderTask(q[sel].id, 'down')) { if (sel < db.getQueued().length - 1) sel++; refresh(); }
+      return;
+    }
+    if (name === 'up' || (name === 'k' && !shift)) { if (sel > 0) { sel--; ui.taskList.select(sel); refresh(); } return; }
+    if (name === 'down' || (name === 'j' && !shift)) { if (sel < db.getQueued().length - 1) { sel++; ui.taskList.select(sel); refresh(); } return; }
     if (name === 'space' || name === 'enter') { const p = db.pullNext(); if (p) { toast(`Pulled: ${p.name}`); goFocus(); } else toast('No tasks to pull'); return; }
-    if (name === 'a') { mode = 'add'; ae = 1; at = 2; an = ''; refresh(); return; }
+    if (name === 'a') { mode = 'add'; ae = 1; at = Math.min(DEFAULT_TYPE_INDEX, taskTypes.length - 1); an = ''; refresh(); return; }
     if (name === 'e') {
       const q = db.getQueued();
       if (q.length === 0 || sel >= q.length) return;
@@ -383,16 +441,6 @@ export function buildUI() {
       db.deleteTask(q[sel].id); toast('Deleted');
       if (sel >= db.getQueued().length) sel = Math.max(0, db.getQueued().length - 1);
       refresh(); return;
-    }
-    if (name === 'k' && shift) {
-      const q = db.getQueued();
-      if (q.length > 0 && sel < q.length && db.reorderTask(q[sel].id, 'up')) { if (sel > 0) sel--; refresh(); }
-      return;
-    }
-    if (name === 'j' && shift) {
-      const q = db.getQueued();
-      if (q.length > 0 && sel < q.length && db.reorderTask(q[sel].id, 'down')) { if (sel < db.getQueued().length - 1) sel++; refresh(); }
-      return;
     }
     if (name === 'q') { process.exit(0); }
   });

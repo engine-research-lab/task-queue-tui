@@ -3,27 +3,109 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import type { Task, EnergyLevel, TaskStats } from './types';
 
-const DB_DIR = path.join(os.homedir(), '.taskqueue');
-const DB_PATH = path.join(DB_DIR, 'tasks.json');
 let cache: Task[] | null = null;
+let cachePath: string | null = null;
 
-function ensureDir(): void {
-  if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
+function getDbPath(): string {
+  return process.env.TASKQUEUE_DB_PATH ?? path.join(os.homedir(), '.taskqueue', 'tasks.json');
+}
+
+function ensureDir(filePath: string): void {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+function writeTasks(filePath: string, tasks: Task[]): void {
+  ensureDir(filePath);
+  const tmpPath = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(tasks, null, 2), 'utf-8');
+  fs.renameSync(tmpPath, filePath);
+}
+
+function backupInvalidFile(filePath: string): void {
+  if (!fs.existsSync(filePath)) return;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  fs.renameSync(filePath, `${filePath}.corrupt-${stamp}`);
+}
+
+function maxQueuedPosition(tasks: Task[]): number {
+  return Math.max(
+    -1,
+    ...tasks
+      .filter(t => t.status === 'queued' && Number.isFinite(t.position))
+      .map(t => t.position),
+  );
+}
+
+function normalizeTasks(tasks: Task[]): { tasks: Task[]; changed: boolean } {
+  let changed = false;
+  let hasActive = false;
+
+  for (const task of tasks) {
+    if (!Number.isFinite(task.position)) {
+      task.position = maxQueuedPosition(tasks) + 1;
+      changed = true;
+    }
+
+    if (task.status === 'active') {
+      if (hasActive) {
+        task.status = 'queued';
+        task.completed_at = null;
+        changed = true;
+      } else {
+        hasActive = true;
+      }
+    }
+  }
+
+  const queued = tasks
+    .filter(t => t.status === 'queued')
+    .sort((a, b) => a.position - b.position);
+
+  queued.forEach((task, position) => {
+    if (task.position !== position) {
+      task.position = position;
+      changed = true;
+    }
+  });
+
+  return { tasks, changed };
 }
 
 function load(): Task[] {
-  if (cache !== null) return cache;
-  ensureDir();
+  const dbPath = getDbPath();
+  if (cache !== null && cachePath === dbPath) return cache;
+  ensureDir(dbPath);
   try {
-    cache = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8')) as Task[];
-  } catch { cache = []; }
+    const parsed = JSON.parse(fs.readFileSync(dbPath, 'utf-8')) as unknown;
+    if (!Array.isArray(parsed)) {
+      backupInvalidFile(dbPath);
+      cache = [];
+    } else {
+      const normalized = normalizeTasks(parsed as Task[]);
+      cache = normalized.tasks;
+      if (normalized.changed) writeTasks(dbPath, cache);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      cache = [];
+    } else if (error instanceof SyntaxError) {
+      backupInvalidFile(dbPath);
+      cache = [];
+    } else {
+      throw error;
+    }
+  }
+  cachePath = dbPath;
   return cache;
 }
 
 function save(tasks: Task[]): void {
-  cache = tasks;
-  ensureDir();
-  fs.writeFileSync(DB_PATH, JSON.stringify(tasks, null, 2), 'utf-8');
+  const dbPath = getDbPath();
+  const normalized = normalizeTasks(tasks);
+  cache = normalized.tasks;
+  cachePath = dbPath;
+  writeTasks(dbPath, cache);
 }
 
 function uid(): string {
@@ -50,11 +132,10 @@ export function getCompleted(limit = 50): Task[] {
 /** Add a new queued task */
 export function addTask(name: string, energy_level: EnergyLevel, task_type: string): Task {
   const tasks = load();
-  const maxPos = tasks.length > 0 ? Math.max(...tasks.filter(t => t.status === 'queued').map(t => t.position)) : -1;
   const task: Task = {
     id: uid(), name, energy_level, task_type,
     definition_of_done: '', sub_steps: [],
-    status: 'queued', position: maxPos + 1,
+    status: 'queued', position: maxQueuedPosition(tasks) + 1,
     created_at: new Date().toISOString(), completed_at: null,
   };
   tasks.push(task);
@@ -65,6 +146,8 @@ export function addTask(name: string, energy_level: EnergyLevel, task_type: stri
 /** Pull first queued task into active */
 export function pullNext(): Task | null {
   const tasks = load();
+  const active = tasks.find(t => t.status === 'active');
+  if (active) return active;
   const next = tasks.filter(t => t.status === 'queued').sort((a, b) => a.position - b.position)[0];
   if (!next) return null;
   next.status = 'active';
@@ -88,10 +171,10 @@ export function returnActive(): Task | null {
   const tasks = load();
   const active = tasks.find(t => t.status === 'active');
   if (!active) return null;
+  const nextPosition = maxQueuedPosition(tasks) + 1;
   active.status = 'queued';
-  // Move to end of queue
-  const maxPos = Math.max(...tasks.filter(t => t.status === 'queued').map(t => t.position), -1);
-  active.position = maxPos + 1;
+  active.completed_at = null;
+  active.position = nextPosition;
   save(tasks);
   return active;
 }
@@ -111,7 +194,6 @@ export function swapFirst(): Task | null {
   next.status = 'active';
 
   // Active goes to front of queue, next was first so positions work out
-  const activePos = active.position;
   active.position = next.position;
   // next's position stays the same (it had the lowest position)
 

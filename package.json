@@ -1,12 +1,22 @@
 {
   "name": "task-queue-tui",
-  "version": "1.0.5",
+  "version": "1.0.7",
   "bin": {
     "tq": "bin/tq.js"
   },
+  "files": [
+    "bin",
+    "src",
+    "docs",
+    "tsconfig.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.mjs"
   },
   "dependencies": {
     "blessed": "^0.1.81",
